@@ -74,14 +74,17 @@ input {
 		
 		// APIキー毎のアクティブなPeerIDを取得
 		peer.listAllPeers(function(list){
+			console.log('listAllPeer: start');
 			for(var i=0, l=list.length; i < l; i++){
 				conn = peer.connect(list[i]);
 				connOpen();
 			}
+			console.log('listAllPeer: end');
 		});
 		
 		// 相手がpeer.connect()したら
 		peer.on('connection', function(connObj) {
+			console.log('peer.on: connection');
 			conn = connObj;
 			connOpen();
 		});
@@ -89,6 +92,7 @@ input {
 		// 送信ボタンを押したら
 		// conn.sendで接続先にdataを送信する
 		$('#message-btn').click(function(){
+			console.log('click!');
 			var data = $('#message-text').val();
 			console.log(data);
 			conn.send(data);
@@ -98,8 +102,10 @@ input {
 		// 接続が確立されたらopenが呼ばれる
 		// conn.on('data')で、送られてきたdataを取得できる
 		function connOpen(id) {
+			console.log('function connOpen');
 			conn.on('open', function() {
-				console.log('接続中');
+				console.log('conn.on: open');
+				// console.log('接続中');
 				$('.message').fadeIn(100);
 				
 				conn.on('data', function(data) {
