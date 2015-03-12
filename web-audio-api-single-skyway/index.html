@@ -130,40 +130,29 @@ button:focus {
 	80% { opacity: 1; transform: scale(0.97); }
 	100% { opacity: 0; transform: scale(2); }
 }
-.p-relative { position: relative; }
-.box { margin: 10px 0; }
-#my-peer-id { color: blue; }
 
 </style>
 </head>
 <body>
-	<h1>Web Audio API Sample(Single) | SkyWay</h1>
-	<p>Web Audio APIで音声再生するサンプル(自動で接続する)</p>
-	
-	<div class="box">My Peer ID: <span id="my-peer-id"></span></div>
-	
-	<div class="p-relative">
-		<button id="kick"> kick </button>
-		<button id="cymbal"> cymbal </button>
-		<button id="hat"> hat </button>
-		<button id="snare"> snare </button>
-	</div>
+	<button id="kick"> kick </button>
+	<button id="cymbal"> cymbal </button>
+	<button id="hat"> hat </button>
+	<button id="snare"> snare </button>
 	
 	<div id="result"></div>
-	<div id="splash-image"></div>
+	<!-- <div id="splash-image"></div> -->
 <script>
 	;(function(window, undefined){
 		
 		// Peerオブジェクトを生成する
 		var APIKEY = '2f90eb49-ad19-435a-82c7-1a704e08a4b7';
 		var peer = new Peer({key: APIKEY});
-		var conn;
+		var conn; // DataConnectionオブジェクト
 		
 		// new Peerして、Peerオブジェクト生成されたら。
 		// 引数のidで生成されたランダムなidが発行されるので、それを使ってpeer.connectする
 		peer.on('open', function(id) {
 			console.log('My peer ID is: ' + id);
-			$('#my-peer-id').html(id);
 		});
 		
 		// APIキー毎のアクティブなPeerIDを取得
@@ -180,173 +169,117 @@ button:focus {
 			connOpen();
 		});
 		
-		// 送信ボタンを押したら
-		// conn.sendで接続先にdataを送信する
-		$('#message-btn').click(function(){
-			var data = $('#message-text').val();
-			console.log(data);
-			conn.send(data);
-			soundStart(data, true);
-		});
-		
 		// 接続が確立されたらopenが呼ばれる
 		// conn.on('data')で、送られてきたdataを取得できる
-		function connOpen(id) {
+		function connOpen() {
 			conn.on('open', function() {
 				console.log('接続中');
-				$('.message').fadeIn(100);
 				
 				conn.on('data', function(data) {
 					console.log('Received', data);
-					soundStart(data, false);
+					// soundStart(data);
 				});
 			});
 		}
 		
-		// メッセージをappendする
-		function soundStart(id, isMine) {
-			drumObj[id].source = drumObj[id].context.createBufferSource();
-			drumObj[id].source.buffer = drumObj[id].buffer;
-			drumObj[id].source.connect(drumObj[id].context.destination);
-			drumObj[id].source.start(0);
+		// 音声を再生する
+		function soundStart(data) {
+			console.log('soundStart');
 			
-			// ポップアップを表示
-			result.className = "popup";
-			result.innerHTML = id + '!';
-			result.addEventListener("webkitAnimationEnd", function(){ this.className = ""; });
-			result.addEventListener("animationend", function(){ this.className = ""; });
+		  
 		}
+    
+    $('#kick').click(function(){
+      var source1 = context.createBufferSource();
+      source1.buffer = bufferListArray[0];
+
+      source1.connect(context.destination);
+      source1.start(0);
+    });
 		
 		// 以下、WebAudioAPI
-		var drumObj = {}; // ドラムのbutton、音声情報を格納するObject
-	
-		var isTouchDevice = 'ontouchend' in document;
-		var eventNames = {
-			start: isTouchDevice ? 'touchstart' : 'mousedown',
-			move:  isTouchDevice ? 'touchmove'  : 'mousemove',
-			end:   isTouchDevice ? 'touchend'   : 'mouseup',
-			click: 'click'
-		};
-		
-		var result = document.getElementById('result'),　// ポップアップ用
-			splashImage = document.getElementById('splash-image'); // スプラッシュ画像
-		
-		function AudioBufferLoader(ele, url) {
-			window.AudioContext = window.AudioContext || window.webkitAudioContext;
-			try {
-				this.context = new AudioContext;
-			}
-			catch(e) {
-				alert('Web Audio API is not supported in this browser');
-			}
-			this.ele = document.getElementById(ele);
-			this.url = url;
-			this.buffer = null;
-		}
-		AudioBufferLoader.prototype = {
-			loadBuffer: function(url) {
-				var _this = this;
-				var request = new XMLHttpRequest();
-				request.open('get', url, true);
-				request.responseType = 'arraybuffer';
-				request.onload = function() {
-					_this.context.decodeAudioData(
-						request.response,
-						function(buffer) {
-							if (! buffer) {
-								alert('error decodeing file data: ' + url);
-								return;
-							}
-							_this.buffer = buffer;
-							_this.events();
-						},
-						function(error) {
-							alert('decodeAudioData error', error);
-						}
-					);
-				};
-				request.onerror = function() {
-					alert('AudioBufferLoader: XHR error');
-				};
-				request.send();
-			},
-			events: function() {
-				var _this = this;
-				var context = _this.context;
-				
-				_this.ele.addEventListener(eventNames.start, function() {
-					this.className = '';
-					this.className = 'tap';
-					result.className = "";
-					
-					// socket.ioで全デバイスで同期させる為、タップイベントでは再生せずサーバーからの返答時に再生
-					// var source = context.createBufferSource();
-					// source.buffer = _this.buffer;
-					// source.connect(context.destination);
-					// source.start(0);
-					
-					// クライアントからサーバーにボタンidを送る
-					conn.send(this.id);
-					soundStart(this.id, true);
-				});
-				_this.ele.addEventListener(eventNames.end, function() {
-					this.className = '';
-				});
-			},
-			load: function() {
-				var _this = this;
-				_this.loadBuffer(_this.url);
-			},
-			
-			// 音声データをセット
-			set: function () {
-				var _this = this;
-				
-				_this.source = _this.context.createBufferSource();
-				_this.source.buffer = _this.buffer;
-				_this.source.connect(_this.context.destination);
-			}
-		};
-		
-		drumObj.kick = new AudioBufferLoader('kick', 'sound/kick.m4a');
-		drumObj.kick.load();
-		drumObj.cymbal = new AudioBufferLoader('cymbal', 'sound/cymbal.m4a');
-		drumObj.cymbal.load();
-		drumObj.hat = new AudioBufferLoader('hat', 'sound/hat.m4a');
-		drumObj.hat.load();
-		drumObj.snare = new AudioBufferLoader('snare', 'sound/snare.m4a');
-		drumObj.snare.load();
-		
-		// スプラッシュ画像を押した時に音声データをロード
-		// iPhone/Androidで最初の音声ロードだけはユーザーアクションが必要な制約がある為(PCにはこの制約はなさそう)
-		splashImage.addEventListener(eventNames.start, function(){
-			// 音声データをセット
-			drumObj.kick.set();
-			drumObj.cymbal.set();
-			drumObj.hat.set();
-			drumObj.snare.set();
-			
-			// スプラッシュ画像をフェードアウト
-			this.className = 'fade-out';
-			this.addEventListener("webkitAnimationEnd", function(){ this.className = "none"; });
-			this.addEventListener("animationend", function(){ this.className = "none"; });
-		});
-		
-		// サーバーから "from_server" が送られてくるのを監視
-		// socketio.on("from_server", function(id){
-		// 	// サーバーから返されたid(buttonのid名)から音声を再生
-		// 	// start()だけを複数回実行出来ない仕様のようなので、毎回createBufferSource()してから再生
-		// 	drumObj[id].source = drumObj[id].context.createBufferSource();
-		// 	drumObj[id].source.buffer = drumObj[id].buffer;
-		// 	drumObj[id].source.connect(drumObj[id].context.destination);
-		// 	drumObj[id].source.start(0);
-			
-		// 	// ポップアップを表示
-		// 	result.className = "popup";
-		// 	result.innerHTML = id + '!';
-		// 	result.addEventListener("webkitAnimationEnd", function(){ this.className = ""; });
-		// 	result.addEventListener("animationend", function(){ this.className = ""; });
-		// });
+		window.onload = init;
+    var context;
+    var bufferLoader;
+    var bufferListArray;
+
+    function init() {
+      // Fix up prefixing
+      window.AudioContext = window.AudioContext || window.webkitAudioContext;
+      context = new AudioContext();
+
+      bufferLoader = new BufferLoader(
+        context,
+        [
+          'sound/kick.m4a',
+          'sound/hat.m4a'
+        ],
+        finishedLoading
+        );
+
+      bufferLoader.load();
+    }
+
+    function finishedLoading(bufferList) {
+      // Create two sources and play them both together.
+      bufferListArray = bufferList;
+      // var source1 = context.createBufferSource();
+      // var source2 = context.createBufferSource();
+      // source1.buffer = bufferList[0];
+      // source2.buffer = bufferList[1];
+
+      // source1.connect(context.destination);
+      // source2.connect(context.destination);
+      // source1.start(0);
+      // source2.start(0);
+    }
+    
+    function BufferLoader(context, urlList, callback) {
+      this.context = context;
+      this.urlList = urlList;
+      this.onload = callback;
+      this.bufferList = new Array();
+      this.loadCount = 0;
+    }
+
+    BufferLoader.prototype.loadBuffer = function(url, index) {
+      // Load buffer asynchronously
+      var request = new XMLHttpRequest();
+      request.open("GET", url, true);
+      request.responseType = "arraybuffer";
+
+      var loader = this;
+
+      request.onload = function() {
+        // Asynchronously decode the audio file data in request.response
+        loader.context.decodeAudioData(
+          request.response,
+          function(buffer) {
+            if (!buffer) {
+              alert('error decoding file data: ' + url);
+              return;
+            }
+            loader.bufferList[index] = buffer;
+            if (++loader.loadCount == loader.urlList.length)
+              loader.onload(loader.bufferList);
+          },
+          function(error) {
+            console.error('decodeAudioData error', error);
+          }
+        );
+      }
+
+      request.onerror = function() {
+        alert('BufferLoader: XHR error');
+      }
+
+      request.send();
+    }
+
+    BufferLoader.prototype.load = function() {
+      for (var i = 0; i < this.urlList.length; ++i)
+      this.loadBuffer(this.urlList[i], i);
+    }
 		
 	})(this);
 </script>
