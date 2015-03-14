@@ -5,10 +5,10 @@
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
 <title>Chat Sample(Multi) | SkyWay</title>
-<meta name="author" content="作成者">
+<meta name="author" content="Naoki.Otsu">
 <meta name="copyright" content="Copyright (C) ">
-<meta name="description" content="サイト説明文">
-<meta name="keywords" content="キーワード,,,,">
+<meta name="description" content="リアルタイム通信して複数メンバー間でチャットする">
+<meta name="keywords" content="P2P,WebRTC,PeerJS,SkyWay">
 <meta http-equiv="Content-Style-Type" content="text/css; charset=UTF-8">
 <meta http-equiv="Content-Script-Type" content="text/javascript; charset=UTF-8">
 <meta http-equiv="imagetoolbar" content="no">
@@ -16,110 +16,200 @@
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
 <script src="https://skyway.io/dist/0.3/peer.js"></script>
 <style type="text/css">
-* { margin: 0; padding: 0; color: #333333; }
-body { margin: 50px; font-size: 12px; }
-h1 { font-size: 14px; }
+* { margin: 0; padding: 0; }
+.container { margin: 20px; color: #333333; }
+h1 { font-size: 20px; margin-bottom: 5px; }
+h2 { font-size: 18px; color: #5878ff; margin-bottom: 5px; }
+p { font-size: 14px; margin-bottom: 10px; }
+.member-area {
+  padding: 10px;
+  color: #5878ff;
+  background: #efefef;
+  margin-bottom: 15px;
+  border-radius: 5px;
+}
+.you { color: #e53837; }
+.wkbox {
+  display:
+  -webkit-box;
+  display: box;
+  -webkit-box-align: center;
+  box-align: center;
+}
+.flex { -webkit-box-flex: 1; }
+#message {
+  width: 100%;
+  height: 30px;
+  padding: 5px;
+  font-size: 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 3px;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+}
+.send {
+  margin-left: 10px;
+  padding: 5px 10px;
+  color: #ffffff;
+  background-color: #4380e5;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.send:active { background-color: #2f69c9; }
+.chat-area {
+  padding: 15px;
+  background-color: #d2e8ff;
+  border-radius: 5px;
+}
+.your-message,
+.other-message {
+  border-radius: 10px;
+  padding: 10px;
+  margin: 15px 0 0;
+}
+.your-message { background-color: #ffffff; }
+.other-message { background-color: #82e43a; }
 </style>
 </head>
 <body>
-
+  
   <div class="container">
-    <h1>
-      <small>My ID: </small>
-      <span id="myId"></span>
-    </h1>
-    <div class="connected"></div>
-    <div class="messages">
-      <input id="message"></input>
-      <span id="sendMessage" class="btn btn-primary">Send</span>
-      <div id="messageData"></div>
-    </div>
-  </div>
-	
-<script>
-$(function(){
-  
-  var API_KEY = 'd74ba527-b70f-4011-b70c-b2068bbb9038';
-  var peer = new Peer({key: API_KEY});
-  var connectedPeer = {}; // 接続した事があるPeer(切断したPeerも含め全て)
-  var timerId; // 定期的な接続チェック用タイマー
-  var TIMER_NUM = 3000; // N秒に1回チェック
-
-  // new Peerして、Peerオブジェクト生成されたら。
-  // 引数のidで生成されたランダムなidが発行されるので、それを使ってpeer.connectする
-  peer.on('open', function(id) {
-    console.log('My peer ID is: ' + id);
-    $('#myId').text(id);
-    myId = id;
     
-    // 定期的タイマースタート
-    peerCheck();
-  });
+    <h1>リアルタイム通信して複数メンバー間でチャットする</h1>
+    <p>相手が入ってきたら自動でP2P接続する | SkyWay(PeerJS)</p>
+    
+    <div class="member-area">
+      <h2>接続中のメンバー(Online)</h2>
+      <div class="you"></div>
+      <div class="other"></div>
+    </div>
+    
+    <div class="chat-area">
+      <div class="wkbox">
+        <div class="flex"><input id="message" placeholder="メッセージを入力\m/"></input></div>
+        <div id="send-message" class="send">送信</div>
+      </div>
+      <div class="message-box"></div>
+    </div>
+    
+  </div>
   
-  // 他のPeerから接続があった時
-  peer.on('connection', function(conn) {
-    console.log(conn.peer+'から接続呼び出しがあった');
-    connect(conn);
-  });
+<script>
   
-  // メッセージを追加
-  var inputMessage = function(id, message) {
-    $('#messageData').prepend($('<div/>').text(id + ': ' + message));
+  function ChatRoom() {
+    this.API_KEY = 'd74ba527-b70f-4011-b70c-b2068bbb9038';
+    this.peer = new Peer({key: this.API_KEY});
+    this.myId; // 自分のPeerID(open時にランダムに生成される)
+    this.connectedPeer = {}; // 接続した事があるPeer(切断したPeerも含め全て)
+    this.timerId; // 定期的な接続チェック用タイマー
+    this.TIMER_NUM = 3000; // N秒に1回チェック
+    
+    this.init();
+  }
+  
+  ChatRoom.prototype.init = function() {
+    this.listener();
   };
   
-  // connect
-  var connect = function(conn) {
-    if(!connectedPeer[conn.peer]) {
-      // 一度も繋いでないPeerだったら
-      $('.connected').prepend($('<div/>').text('ID: ' + conn.peer + 'のデータを受信中'));
+  ChatRoom.prototype.listener = function() {
+    var _this = this;
+    
+    // new Peerして、Peerオブジェクト生成されたら。
+    // 引数のidで生成されたランダムなidが発行されるので、それを使ってpeer.connectする
+    _this.peer.on('open', function(id) {
+      $('.you').text('あなたのID: ' + id);
+      _this.myId = id;
+      
+      // 定期的なPeer接続チェック開始
+      _this.peerCheck();
+    });
+    
+    // 他のPeerから接続があった時
+    _this.peer.on('connection', function(conn) {
+      _this.connect(conn);
+    });
+    
+    // メッセージ送信時
+    $('#send-message').on('click', function(){
+      var text = $('#message').val();
+      $('#message').val('');
+      $.each(_this.peer.connections, function(_id, _conn) {
+        _conn[0].send({
+          message: text,
+          id: _this.myId
+        });
+      });
+      _this.messageAppend('You', text, 'your-message');
+    });
+    
+    // 閉じたらpeerを消去
+    $(window).on('beforeunload', function(){
+      if (!!_this.peer && !_this.peer.destroyed) {
+        _this.peer.destroy();
+      }
+    });
+    
+  };
+  
+  ChatRoom.prototype.messageAppend = function(id, message, className) {
+    var _this = this;
+    
+    $('.message-box').append($('<div/>').addClass(className).text(id + ': ' + message));
+  };
+  
+  ChatRoom.prototype.connect = function(conn) {
+    var _this = this;
+    
+    // 一度も繋いでないPeerだったら
+    if(!_this.connectedPeer[conn.peer]) {
       
       // 接続中の相手からデータが届いたら、メッセージを表示する
       conn.on('data', function(data){
-        console.log(data.ids[0]+'からメッセージを受信した');
-        var id = data.ids[0];
+        var id = data.id;
         var message = data.message;
-        inputMessage(id, message);
+        _this.messageAppend(id, message, 'other-message');
       });
       
       conn.on('close', function() {
         console.log(conn.peer + ' has left the chat.');
-        delete connectedPeer[conn.peer];
-        delete peer.connections[conn.peer];
+        delete _this.connectedPeer[conn.peer];
+        delete _this.peer.connections[conn.peer];
       });
       
-      connectedPeer[conn.peer] = 1;
+      _this.connectedPeer[conn.peer] = 1;
     }
   };
   
-  // 定期的にPeer接続先がないかチェックして、あったら接続する
-  var peerCheck = function () {
+  ChatRoom.prototype.peerCheck = function() {
+    var _this = this;
+    
     // APIキー毎のアクティブなPeerIDを取得(PeerIDがlistに配列で格納される)
-    peer.listAllPeers(function(list){
+    _this.peer.listAllPeers(function(list){
       var connectPeerText = '';
       
       for(var i=0, l=list.length; i < l; i++){
         // 一度も繋いでなく、自分自身のIDじゃなかったら
-        if(connectedPeer[list[i]] !== 1 && myId !== list[i]) {
+        if(_this.connectedPeer[list[i]] !== 1 && _this.myId !== list[i]) {
           var conn = new Conn(list[i]);
         }
         
-        if(myId !== list[i]) {
-          connectPeerText += 'ID: ' + list[i] + 'と通信中<br>';
+        if(_this.myId !== list[i]) {
+          connectPeerText += 'ID: ' + list[i] + '<br>';
         }
       }
       
       // 接続中のIDを表示する
-      $('.connected').html(connectPeerText);
+      $('.other').html(connectPeerText);
     });
     
     // 定期チェック
-    timerId = setTimeout(function(){
-      peerCheck();
-    }, TIMER_NUM);
+    _this.timerId = setTimeout(function(){
+      _this.peerCheck();
+    }, _this.TIMER_NUM);
   };
   
   function Conn(id) {
-    this.conn = peer.connect(id);
+    this.conn = ChatRoom.peer.connect(id);
     this.listener();
   }
   
@@ -127,36 +217,16 @@ $(function(){
     var _this = this;
     
     // 相手Peerと接続が開始されたら
-    this.conn.on('open', function(){
-      connect(_this.conn);
+    _this.conn.on('open', function(){
+      ChatRoom.connect(_this.conn);
     });
     
     // エラーが出たら(データを送る接続先がなかったりしたら出力)
-    this.conn.on('error', function(err) { console.log(err); });
+    _this.conn.on('error', function(err) { console.log(err); });
   }
   
-  // メッセージ送信時
-  $('#sendMessage').click(function() {
-    var text = $('#message').val();
-    $('#message').val('');
-    if(text === '') return;
-    $.each(peer.connections, function(_id, _conn) {
-      console.log(_id+'にメッセージ送信');
-      _conn[0].send({
-        message: text,
-        ids: [myId]
-      });
-    });
-    inputMessage(myId, text);
-  });
+  var ChatRoom = new ChatRoom();
   
-  window.onunload = window.onbeforeunload = function(e) {
-    if (!!peer && !peer.destroyed) {
-      peer.destroy();
-    }
-  };
-  
-});
 </script>
 </body>
 </html>
