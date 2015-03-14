@@ -43,7 +43,7 @@ $(function(){
   var peer = new Peer({key: API_KEY});
   var connectedPeer = {}; // 接続した事があるPeer(切断したPeerも含め全て)
   var timerId; // 定期的な接続チェック用タイマー
-  var TIMER_NUM = 3000; // 3秒に1回チェック
+  var TIMER_NUM = 3000; // N秒に1回チェック
 
   // new Peerして、Peerオブジェクト生成されたら。
   // 引数のidで生成されたランダムなidが発行されるので、それを使ってpeer.connectする
@@ -58,6 +58,7 @@ $(function(){
   
   // 他のPeerから接続があった時
   peer.on('connection', function(conn) {
+    console.log(conn.peer+'から接続呼び出しがあった');
     connect(conn);
   });
   
@@ -68,40 +69,38 @@ $(function(){
   
   // connect
   var connect = function(conn) {
-    // 一度も繋いでないPeerだったら
     if(!connectedPeer[conn.peer]) {
-      // $('.connected').prepend($('<div/>').text('ID: ' + conn.peer + 'と通信中'));
+      // 一度も繋いでないPeerだったら
+      $('.connected').prepend($('<div/>').text('ID: ' + conn.peer + 'のデータを受信中'));
       
+      // 接続中の相手からデータが届いたら、メッセージを表示する
       conn.on('data', function(data){
+        console.log(data.ids[0]+'からメッセージを受信した');
         var id = data.ids[0];
         var message = data.message;
         inputMessage(id, message);
-        
-        conn.on('close', function() {
-          console.log(conn.peer + ' has left the chat.');
-          delete connectedPeer[conn.peer];
-        });
       });
+      
+      conn.on('close', function() {
+        console.log(conn.peer + ' has left the chat.');
+        delete connectedPeer[conn.peer];
+        delete peer.connections[conn.peer];
+      });
+      
+      connectedPeer[conn.peer] = 1;
     }
-    connectedPeer[conn.peer] = 1;
   };
   
   // 定期的にPeer接続先がないかチェックして、あったら接続する
   var peerCheck = function () {
-    console.log('PeerCheck!');
-    
     // APIキー毎のアクティブなPeerIDを取得(PeerIDがlistに配列で格納される)
     peer.listAllPeers(function(list){
       var connectPeerText = '';
       
       for(var i=0, l=list.length; i < l; i++){
         // 一度も繋いでなく、自分自身のIDじゃなかったら
-        if(!connectedPeer[list[i]] && myId !== list[i]) {
-          var conn = peer.connect(list[i]);
-          conn.on('open', function(){
-            connect(conn);
-          });
-          conn.on('error', function(err) { console.log(err); });
+        if(connectedPeer[list[i]] !== 1 && myId !== list[i]) {
+          var conn = new Conn(list[i]);
         }
         
         if(myId !== list[i]) {
@@ -119,12 +118,30 @@ $(function(){
     }, TIMER_NUM);
   };
   
+  function Conn(id) {
+    this.conn = peer.connect(id);
+    this.listener();
+  }
+  
+  Conn.prototype.listener = function() {
+    var _this = this;
+    
+    // 相手Peerと接続が開始されたら
+    this.conn.on('open', function(){
+      connect(_this.conn);
+    });
+    
+    // エラーが出たら(データを送る接続先がなかったりしたら出力)
+    this.conn.on('error', function(err) { console.log(err); });
+  }
+  
   // メッセージ送信時
   $('#sendMessage').click(function() {
     var text = $('#message').val();
     $('#message').val('');
     if(text === '') return;
     $.each(peer.connections, function(_id, _conn) {
+      console.log(_id+'にメッセージ送信');
       _conn[0].send({
         message: text,
         ids: [myId]
