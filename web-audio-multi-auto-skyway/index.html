@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta http-equiv="Content-Language" content="ja">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<title>WebAudioAPI Sample(Multi Session) | SkyWay</title>
+<meta name="author" content="Naoki.Otsu">
+<meta name="copyright" content="Copyright (C) ">
+<meta name="description" content="リアルタイム通信して複数メンバー間でチャットする">
+<meta name="keywords" content="P2P,WebRTC,PeerJS,SkyWay">
+<meta http-equiv="Content-Style-Type" content="text/css; charset=UTF-8">
+<meta http-equiv="Content-Script-Type" content="text/javascript; charset=UTF-8">
+<meta http-equiv="imagetoolbar" content="no">
+<link rel="shortcut icon" href="favicon.ico">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+<script src="https://skyway.io/dist/0.3/peer.js"></script>
+<style type="text/css">
+* { margin: 0; padding: 0; }
+body {
+  font-family: ArialMT,"Hiragino Kaku Gothic ProN","ヒラギノ角ゴ ProN W3","メイリオ",sans-serif;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  tap-highlight-color: transparent;
+  position: relative;
+}
+.container { margin: 20px; color: #333333; }
+h1 { font-size: 20px; margin-bottom: 5px; }
+h2 { font-size: 18px; color: #5878ff; margin-bottom: 5px; }
+p { font-size: 14px; margin-bottom: 10px; }
+.member-area {
+  padding: 10px;
+  color: #5878ff;
+  background: #efefef;
+  margin-bottom: 15px;
+  border-radius: 5px;
+}
+.you { color: #e53837; }
+button {
+  display: block;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #ddd;
+  width: 100px;
+  height: 100px;
+  -webkit-border-radius: 10px;
+  border-radius: 100%;
+  border: 1px solid #aaa;
+  -webkit-user-select: none;
+  user-select: none;
+}
+button:focus { outline: none; }
+button:active { background-color: #999999; }
+.tap {
+  background: #bbb;
+}
+.relative { position: relative; }
+#kick {
+  position: absolute;
+  top: 260px;
+  left: 50%;
+  margin-left: -50px;
+}
+#cymbal {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  margin-left: -50px;
+}
+#hat {
+  position: absolute;
+  top: 130px;
+  left: 10px;
+}
+#snare {
+  position: absolute;
+  top: 130px;
+  right: 10px;
+}
+#result {
+  opacity: 0;
+  color: #ffff00;
+  text-align: center;
+  width: 200px;
+  margin: -29px 0 0 -100px;
+  padding: 20px 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  pointer-events: none;
+  background-color: rgba(0,0,0,0.6);
+  -webkit-border-radius: 5px;
+  border-radius: 5px;
+}
+#result.popup {
+  -webkit-animation: popup 0.6s linear 1;
+  animation: popup 0.6s linear 1;
+}
+@-webkit-keyframes popup {
+  0% { opacity: 0; -webkit-transform: scale3d(0.9, 0.9, 0.9); -webkit-transform: scale(0.9, 0.9); }
+  5% { opacity: 1; -webkit-transform: scale3d(1, 1, 1); -webkit-transform: scale(1, 1); }
+  100% { opacity: 0; -webkit-transform: scale3d(1.1, 1.1, 1.1); -webkit-transform: scale(1.1, 1.1); }
+}
+@keyframes popup {
+  0% { opacity: 0; transform: scale3d(0.9, 0.9, 0.9); transform: scale(0.9, 0.9); }
+  5% { opacity: 1; transform: scale3d(1, 1, 1); transform: scale(1, 1); }
+  100% { opacity: 0; transform: scale3d(1.1, 1.1, 1.1); transform: scale(1.1, 1.1); }
+}
+</style>
+</head>
+<body>
+  
+  <div class="container">
+    
+    <h1>リアルタイム通信して複数メンバーで音声再生する</h1>
+    <p>相手が入ってきたら自動でP2P接続 | SkyWay(PeerJS)</p>
+    
+    <div class="member-area">
+      <h2>接続中のメンバー(Online)</h2>
+      <div class="you"></div>
+      <div class="other"></div>
+    </div>
+    
+    <div class="relative">
+      <button id="kick"> kick </button>
+      <button id="cymbal"> cymbal </button>
+      <button id="hat"> hat </button>
+      <button id="snare"> snare </button>
+      <div id="result"></div>
+    </div>
+    
+  </div>
+  
+<script>
+;(function(window, undefined){
+  'use strict';
+  
+  function AudioSessionRoom() {
+    this.API_KEY = 'd74ba527-b70f-4011-b70c-b2068bbb9038';
+    this.peer = new Peer({key: this.API_KEY});
+    this.myId; // 自分のPeerID(open時にランダムに生成される)
+    this.connectedPeer = {}; // 接続した事があるPeer(切断したPeerも含め全て)
+    this.timerId; // 定期的な接続チェック用タイマー
+    this.TIMER_NUM = 3000; // N秒に1回チェック
+    
+    this.init();
+  }
+  
+  AudioSessionRoom.prototype.init = function() {
+    this.listener();
+  };
+  
+  AudioSessionRoom.prototype.listener = function() {
+    var _this = this;
+    
+    // new Peerして、Peerオブジェクト生成されたら。
+    // 引数のidで生成されたランダムなidが発行されるので、それを使ってpeer.connectする
+    _this.peer.on('open', function(id) {
+      $('.you').text('あなたのID: ' + id);
+      _this.myId = id;
+      
+      // 定期的なPeer接続チェック開始
+      _this.peerCheck();
+    });
+    
+    // 他のPeerから接続があった時
+    _this.peer.on('connection', function(conn) {
+      _this.connect(conn);
+    });
+    
+    // TODO: 音声ボタンを押したら
+    $('#kick').click(function(){
+      $.each(_this.peer.connections, function(_id, _conn) {
+        _conn[0].send({
+          id: _this.myId,
+          name: 'kick'
+        });
+      });
+      _this.audioStart('You', 'kick');
+    });
+    $('#cymbal').click(function(){
+      $.each(_this.peer.connections, function(_id, _conn) {
+        _conn[0].send({
+          id: _this.myId,
+          name: 'cymbal'
+        });
+      });
+      _this.audioStart('You', 'cymbal');
+    });
+    $('#hat').click(function(){
+      $.each(_this.peer.connections, function(_id, _conn) {
+        _conn[0].send({
+          id: _this.myId,
+          name: 'hat'
+        });
+      });
+      _this.audioStart('You', 'hat');
+    });
+    $('#snare').click(function(){
+      $.each(_this.peer.connections, function(_id, _conn) {
+        _conn[0].send({
+          id: _this.myId,
+          name: 'snare'
+        });
+      });
+      _this.audioStart('You', 'snare');
+    });
+    
+    // 閉じたらpeerを消去
+    $(window).on('beforeunload', function(){
+      if (!!_this.peer && !_this.peer.destroyed) {
+        _this.peer.destroy();
+      }
+    });
+    
+  };
+  
+  // TODO: 音声を再生する
+  AudioSessionRoom.prototype.audioStart = function(id, name) {
+    var source = context.createBufferSource();
+    source.buffer = soundObj[name];
+    source.connect(context.destination);
+    source.start(0);
+  };
+  
+  AudioSessionRoom.prototype.connect = function(conn) {
+    var _this = this;
+    
+    // 一度も繋いでないPeerだったら
+    if(!_this.connectedPeer[conn.peer]) {
+      
+      // 接続中の相手からデータが届いたら、メッセージを表示する
+      conn.on('data', function(data){
+        var id = data.id;
+        var name = data.name;
+        _this.audioStart(id, name);
+      });
+      
+      conn.on('close', function() {
+        console.log(conn.peer + ' has left the chat.');
+        delete _this.connectedPeer[conn.peer];
+        delete _this.peer.connections[conn.peer];
+      });
+      
+      _this.connectedPeer[conn.peer] = 1;
+    }
+  };
+  
+  AudioSessionRoom.prototype.peerCheck = function() {
+    var _this = this;
+    
+    // APIキー毎のアクティブなPeerIDを取得(PeerIDがlistに配列で格納される)
+    _this.peer.listAllPeers(function(list){
+      var connectPeerText = '';
+      
+      for(var i=0, l=list.length; i < l; i++){
+        // 一度も繋いでなく、自分自身のIDじゃなかったら
+        if(_this.connectedPeer[list[i]] !== 1 && _this.myId !== list[i]) {
+          var conn = new Conn(list[i]);
+        }
+        
+        if(_this.myId !== list[i]) {
+          connectPeerText += 'ID: ' + list[i] + '<br>';
+        }
+      }
+      
+      // 接続中のIDを表示する
+      $('.other').html(connectPeerText);
+    });
+    
+    // 定期チェック
+    _this.timerId = setTimeout(function(){
+      _this.peerCheck();
+    }, _this.TIMER_NUM);
+  };
+  
+  function Conn(id) {
+    this.conn = AudioSessionRoom.peer.connect(id);
+    this.listener();
+  }
+  
+  Conn.prototype.listener = function() {
+    var _this = this;
+    
+    // 相手Peerと接続が開始されたら
+    _this.conn.on('open', function(){
+      AudioSessionRoom.connect(_this.conn);
+    });
+    
+    // エラーが出たら(データを送る接続先がなかったりしたら出力)
+    _this.conn.on('error', function(err) { console.log(err); });
+  }
+  
+  var AudioSessionRoom = new AudioSessionRoom();
+  
+  // 以下、WebAudioAPI
+  window.onload = init;
+  var context;
+  var soundNameList = ['cymbal','hat','snare','kick'];
+  var soundPathList = [
+    'sound/cymbal.m4a',
+    'sound/hat.m4a',
+    'sound/snare.m4a',
+    'sound/kick.m4a',
+  ];
+  var soundObj = {};
+  var loadCout = 0;
+
+  function init() {
+    window.AudioContext = window.AudioContext || window.webkitAudioContext;
+    context = new AudioContext();
+    
+    for(var i=0, l=soundPathList.length; i<l; i++) {
+      var bufferLoader = new BufferLoader();
+      bufferLoader.load(soundPathList[i], soundNameList[i]);
+    }
+  }
+
+  function finishedLoading() {
+    console.log('load完了');
+    console.log(soundObj);
+  }
+  
+  function BufferLoader() {
+    console.log('new');
+  }
+
+  BufferLoader.prototype.loadBuffer = function(path, name) {
+    var request = new XMLHttpRequest();
+    request.open("GET", path, true);
+    request.responseType = "arraybuffer";
+
+    request.onload = function() {
+      context.decodeAudioData(
+        request.response,
+        function(buffer) {
+          if (!buffer) {
+            alert('error decoding file data: ' + url);
+            return;
+          }
+          soundObj[name] = buffer;
+          if(++loadCout === soundPathList.length){
+            finishedLoading();
+          }
+        },
+        function(error) {
+          console.error('decodeAudioData error', error);
+        }
+      );
+    }
+
+    request.onerror = function() {
+      alert('BufferLoader: XHR error');
+    }
+
+    request.send();
+  }
+
+  BufferLoader.prototype.load = function(path, name) {
+    this.loadBuffer(path, name);
+  }
+  
+})(window);
+</script>
+</body>
+</html>
