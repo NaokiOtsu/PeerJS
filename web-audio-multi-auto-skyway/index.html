@@ -86,11 +86,15 @@ button:active { background-color: #999999; }
   color: #ffff00;
   text-align: center;
   width: 200px;
-  margin: -29px 0 0 -100px;
+  height: 30px;
+  line-height: 30px;
+  margin: auto;
   padding: 20px 0;
   position: absolute;
-  top: 50%;
-  left: 50%;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   pointer-events: none;
   background-color: rgba(0,0,0,0.6);
   -webkit-border-radius: 5px;
@@ -139,6 +143,94 @@ button:active { background-color: #999999; }
 ;(function(window, undefined){
   'use strict';
   
+  // 以下、WebAudioAPI
+  window.onload = init;
+  var context;
+  var soundObj = {
+    soundNameList: [],
+    soundPathList: [
+      'sound/cymbal.m4a',
+      'sound/hat.m4a',
+      'sound/snare.m4a',
+      'sound/kick.m4a',
+    ]
+  };
+  var loadCount = 0;
+  var audioSessionRoom;
+  
+  // Touch or Click Event
+  var isTouchDevice = 'ontouchend' in document;
+  var eventNames = {
+    start: isTouchDevice ? 'touchstart' : 'mousedown',
+    move:  isTouchDevice ? 'touchmove'  : 'mousemove',
+    end:   isTouchDevice ? 'touchend'   : 'mouseup',
+    click: 'click'
+  };
+  
+  // DOM
+  var $result;
+  
+  function init() {
+    window.AudioContext = window.AudioContext || window.webkitAudioContext;
+    context = new AudioContext();
+    
+    $result = $('#result');
+    
+    // サウンドの読み込み
+    for(var i = 0, l = soundObj.soundPathList.length; i < l; i++) {
+      // ファイルパスからファイル名を取り出して、soundNameListに格納
+      var name = soundObj.soundPathList[i].split('/').pop().match(/(.+)(\.[^.]+$)/)[1];
+      soundObj.soundNameList[i] = name;
+      
+      var bufferLoader = new BufferLoader();
+      bufferLoader.load(soundObj.soundPathList[i], soundObj.soundNameList[i]);
+    }
+  }
+  
+  // 音声データload完了
+  function finishedLoading() {
+    audioSessionRoom = new AudioSessionRoom(); // 音声ロードが完了したらセッションスタートする
+  }
+  
+  function BufferLoader() {}
+
+  BufferLoader.prototype.loadBuffer = function(path, name) {
+    var request = new XMLHttpRequest();
+    request.open("GET", path, true);
+    request.responseType = "arraybuffer";
+
+    request.onload = function() {
+      context.decodeAudioData(
+        request.response,
+        function(buffer) {
+          if (!buffer) {
+            alert('error decoding file data: ' + url);
+            return;
+          }
+          soundObj[name] = buffer;
+          if(++loadCount === soundObj.soundPathList.length){
+            finishedLoading();
+          }
+        },
+        function(error) {
+          console.error('decodeAudioData error', error);
+        }
+      );
+    }
+
+    request.onerror = function() {
+      alert('BufferLoader: XHR error');
+    }
+
+    request.send();
+  }
+
+  BufferLoader.prototype.load = function(path, name) {
+    this.loadBuffer(path, name);
+  }
+  
+  
+  // 以下、AudioSessionRoom
   function AudioSessionRoom() {
     this.API_KEY = 'd74ba527-b70f-4011-b70c-b2068bbb9038';
     this.peer = new Peer({key: this.API_KEY});
@@ -172,43 +264,24 @@ button:active { background-color: #999999; }
       _this.connect(conn);
     });
     
-    // TODO: 音声ボタンを押したら
-    $('#kick').click(function(){
-      $.each(_this.peer.connections, function(_id, _conn) {
-        _conn[0].send({
-          id: _this.myId,
-          name: 'kick'
+    // 音声ボタンを押したら
+    for(var i = 0, l = soundObj.soundNameList.length; i < l; i++) {
+      (function(i){
+        $('#' + soundObj.soundNameList[i]).on(eventNames.start, function(){
+          $.each(_this.peer.connections, function(_id, _conn) {
+            _conn[0].send({
+              id: _this.myId,
+              name: soundObj.soundNameList[i]
+            });
+          });
+          _this.audioStart('You', soundObj.soundNameList[i]);
         });
-      });
-      _this.audioStart('You', 'kick');
-    });
-    $('#cymbal').click(function(){
-      $.each(_this.peer.connections, function(_id, _conn) {
-        _conn[0].send({
-          id: _this.myId,
-          name: 'cymbal'
-        });
-      });
-      _this.audioStart('You', 'cymbal');
-    });
-    $('#hat').click(function(){
-      $.each(_this.peer.connections, function(_id, _conn) {
-        _conn[0].send({
-          id: _this.myId,
-          name: 'hat'
-        });
-      });
-      _this.audioStart('You', 'hat');
-    });
-    $('#snare').click(function(){
-      $.each(_this.peer.connections, function(_id, _conn) {
-        _conn[0].send({
-          id: _this.myId,
-          name: 'snare'
-        });
-      });
-      _this.audioStart('You', 'snare');
-    });
+      })(i);
+    }
+    
+    // ポップアップ後にclass名削除
+    $result[0].addEventListener("webkitAnimationEnd", function(){ this.className = ""; });
+    $result[0].addEventListener("animationend", function(){ this.className = ""; });
     
     // 閉じたらpeerを消去
     $(window).on('beforeunload', function(){
@@ -219,12 +292,16 @@ button:active { background-color: #999999; }
     
   };
   
-  // TODO: 音声を再生する
+  // 音声を再生する
   AudioSessionRoom.prototype.audioStart = function(id, name) {
     var source = context.createBufferSource();
     source.buffer = soundObj[name];
     source.connect(context.destination);
     source.start(0);
+    
+    // ポップアップ表示
+    $result.addClass('popup');
+    $result.html(name + '!');
   };
   
   AudioSessionRoom.prototype.connect = function(conn) {
@@ -279,7 +356,7 @@ button:active { background-color: #999999; }
   };
   
   function Conn(id) {
-    this.conn = AudioSessionRoom.peer.connect(id);
+    this.conn = audioSessionRoom.peer.connect(id);
     this.listener();
   }
   
@@ -288,80 +365,11 @@ button:active { background-color: #999999; }
     
     // 相手Peerと接続が開始されたら
     _this.conn.on('open', function(){
-      AudioSessionRoom.connect(_this.conn);
+      audioSessionRoom.connect(_this.conn);
     });
     
     // エラーが出たら(データを送る接続先がなかったりしたら出力)
     _this.conn.on('error', function(err) { console.log(err); });
-  }
-  
-  var AudioSessionRoom = new AudioSessionRoom();
-  
-  // 以下、WebAudioAPI
-  window.onload = init;
-  var context;
-  var soundNameList = ['cymbal','hat','snare','kick'];
-  var soundPathList = [
-    'sound/cymbal.m4a',
-    'sound/hat.m4a',
-    'sound/snare.m4a',
-    'sound/kick.m4a',
-  ];
-  var soundObj = {};
-  var loadCout = 0;
-
-  function init() {
-    window.AudioContext = window.AudioContext || window.webkitAudioContext;
-    context = new AudioContext();
-    
-    for(var i=0, l=soundPathList.length; i<l; i++) {
-      var bufferLoader = new BufferLoader();
-      bufferLoader.load(soundPathList[i], soundNameList[i]);
-    }
-  }
-
-  function finishedLoading() {
-    console.log('load完了');
-    console.log(soundObj);
-  }
-  
-  function BufferLoader() {
-    console.log('new');
-  }
-
-  BufferLoader.prototype.loadBuffer = function(path, name) {
-    var request = new XMLHttpRequest();
-    request.open("GET", path, true);
-    request.responseType = "arraybuffer";
-
-    request.onload = function() {
-      context.decodeAudioData(
-        request.response,
-        function(buffer) {
-          if (!buffer) {
-            alert('error decoding file data: ' + url);
-            return;
-          }
-          soundObj[name] = buffer;
-          if(++loadCout === soundPathList.length){
-            finishedLoading();
-          }
-        },
-        function(error) {
-          console.error('decodeAudioData error', error);
-        }
-      );
-    }
-
-    request.onerror = function() {
-      alert('BufferLoader: XHR error');
-    }
-
-    request.send();
-  }
-
-  BufferLoader.prototype.load = function(path, name) {
-    this.loadBuffer(path, name);
   }
   
 })(window);
