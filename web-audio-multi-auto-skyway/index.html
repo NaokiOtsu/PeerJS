@@ -14,7 +14,7 @@
 <meta http-equiv="imagetoolbar" content="no">
 <link rel="shortcut icon" href="favicon.ico">
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
-<script src="https://skyway.io/dist/0.3/peer.js"></script>
+<script src="peer.min.js"></script>
 <style type="text/css">
 * { margin: 0; padding: 0; }
 body {
@@ -81,13 +81,12 @@ button:active { background-color: #999999; }
   top: 130px;
   right: 10px;
 }
-#result {
+#popup {
   opacity: 0;
   color: #ffff00;
   text-align: center;
   width: 200px;
-  height: 30px;
-  line-height: 30px;
+  height: 50px;
   margin: auto;
   padding: 20px 0;
   position: absolute;
@@ -100,16 +99,16 @@ button:active { background-color: #999999; }
   -webkit-border-radius: 5px;
   border-radius: 5px;
 }
-#result.popup {
-  -webkit-animation: popup 0.6s linear 1;
-  animation: popup 0.6s linear 1;
+#popup.active {
+  -webkit-animation: active 0.6s linear 1;
+  animation: active 0.6s linear 1;
 }
-@-webkit-keyframes popup {
+@-webkit-keyframes active {
   0% { opacity: 0; -webkit-transform: scale3d(0.9, 0.9, 0.9); -webkit-transform: scale(0.9, 0.9); }
   5% { opacity: 1; -webkit-transform: scale3d(1, 1, 1); -webkit-transform: scale(1, 1); }
   100% { opacity: 0; -webkit-transform: scale3d(1.1, 1.1, 1.1); -webkit-transform: scale(1.1, 1.1); }
 }
-@keyframes popup {
+@keyframes active {
   0% { opacity: 0; transform: scale3d(0.9, 0.9, 0.9); transform: scale(0.9, 0.9); }
   5% { opacity: 1; transform: scale3d(1, 1, 1); transform: scale(1, 1); }
   100% { opacity: 0; transform: scale3d(1.1, 1.1, 1.1); transform: scale(1.1, 1.1); }
@@ -120,11 +119,12 @@ button:active { background-color: #999999; }
   
   <div class="container">
     
-    <h1>リアルタイム通信して複数メンバーで音声再生する</h1>
-    <p>相手が入ってきたら自動でP2P接続 | SkyWay(PeerJS)</p>
+    <h1>リアルタイム通信(peer to peer)して複数メンバーで音声再生するサンプル</h1>
+    <p>マッチング相手を定期的にチェックして自動接続します。 | SkyWay(PeerJS)</p>
+    <p>SkyWayのドキュメントは<a href="http://nttcom.github.io/skyway/docs/" target="blank">こちら</a></p>
     
     <div class="member-area">
-      <h2>接続中のメンバー(Online)</h2>
+      <h2>接続中のメンバー(マッチング中...)</h2>
       <div class="you"></div>
       <div class="other"></div>
     </div>
@@ -134,7 +134,7 @@ button:active { background-color: #999999; }
       <button id="cymbal"> cymbal </button>
       <button id="hat"> hat </button>
       <button id="snare"> snare </button>
-      <div id="result"></div>
+      <div id="popup"></div>
     </div>
     
   </div>
@@ -143,8 +143,11 @@ button:active { background-color: #999999; }
 ;(function(window, undefined){
   'use strict';
   
+  $(function(){
+    init();
+  });
+  
   // 以下、WebAudioAPI
-  window.onload = init;
   var context;
   var soundObj = {
     soundNameList: [],
@@ -155,7 +158,7 @@ button:active { background-color: #999999; }
       'sound/kick.m4a',
     ]
   };
-  var loadCount = 0;
+  var loadCount = 0; // 音声データのロード完了カウント
   var audioSessionRoom;
   
   // Touch or Click Event
@@ -168,17 +171,17 @@ button:active { background-color: #999999; }
   };
   
   // DOM
-  var $result;
+  var $popup; // ポップアップ
   
   function init() {
     window.AudioContext = window.AudioContext || window.webkitAudioContext;
     context = new AudioContext();
     
-    $result = $('#result');
+    $popup = $('#popup');
     
-    // サウンドの読み込み
+    // サウンドの読み込み開始
     for(var i = 0, l = soundObj.soundPathList.length; i < l; i++) {
-      // ファイルパスからファイル名を取り出して、soundNameListに格納
+      // ファイルパスからファイル名を取り出して、soundNameListに格納(例:kickなど)
       var name = soundObj.soundPathList[i].split('/').pop().match(/(.+)(\.[^.]+$)/)[1];
       soundObj.soundNameList[i] = name;
       
@@ -187,7 +190,7 @@ button:active { background-color: #999999; }
     }
   }
   
-  // 音声データload完了
+  // 音声データが全てload完了したら
   function finishedLoading() {
     audioSessionRoom = new AudioSessionRoom(); // 音声ロードが完了したらセッションスタートする
   }
@@ -230,21 +233,17 @@ button:active { background-color: #999999; }
   }
   
   
-  // 以下、AudioSessionRoom
+  // 以下、AudioSessionRoom(マッチング相手を定期的にチェックして、音声再生するとP2P接続してセッションする)
   function AudioSessionRoom() {
     this.API_KEY = 'd74ba527-b70f-4011-b70c-b2068bbb9038';
     this.peer = new Peer({key: this.API_KEY});
     this.myId; // 自分のPeerID(open時にランダムに生成される)
-    this.connectedPeer = {}; // 接続した事があるPeer(切断したPeerも含め全て)
+    this.connectedPeer = {}; // 接続した事があるPeer
     this.timerId; // 定期的な接続チェック用タイマー
     this.TIMER_NUM = 3000; // N秒に1回チェック
     
-    this.init();
-  }
-  
-  AudioSessionRoom.prototype.init = function() {
     this.listener();
-  };
+  }
   
   AudioSessionRoom.prototype.listener = function() {
     var _this = this;
@@ -279,9 +278,9 @@ button:active { background-color: #999999; }
       })(i);
     }
     
-    // ポップアップ後にclass名削除
-    $result[0].addEventListener("webkitAnimationEnd", function(){ this.className = ""; });
-    $result[0].addEventListener("animationend", function(){ this.className = ""; });
+    // ポップアップ後にclass名を削除
+    $popup[0].addEventListener("webkitAnimationEnd", function(){ this.className = ""; });
+    $popup[0].addEventListener("animationend", function(){ this.className = ""; });
     
     // 閉じたらpeerを消去
     $(window).on('beforeunload', function(){
@@ -300,8 +299,8 @@ button:active { background-color: #999999; }
     source.start(0);
     
     // ポップアップ表示
-    $result.addClass('popup');
-    $result.html(name + '!');
+    $popup.addClass('active');
+    $popup.html(id + 'が<br>' + name + '!');
   };
   
   AudioSessionRoom.prototype.connect = function(conn) {
@@ -318,7 +317,7 @@ button:active { background-color: #999999; }
       });
       
       conn.on('close', function() {
-        console.log(conn.peer + ' has left the chat.');
+        console.log(conn.peer + ' has left the AudioSessionRoom.');
         delete _this.connectedPeer[conn.peer];
         delete _this.peer.connections[conn.peer];
       });
